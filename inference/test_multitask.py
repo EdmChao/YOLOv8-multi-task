@@ -128,6 +128,36 @@ def run(args):
 	)
 
 	for idx, res in enumerate(results):
+		# Debug: print result summary so we can inspect types and contents
+		try:
+			res_type = type(res)
+			print(f"[DBG] idx={idx} res_type={res_type}")
+			# If it's a list, show length and sample repr
+			if isinstance(res, list):
+				print(f"[DBG] results[{idx}] is list length={len(res)} repr_sample={str(res)[:200]}")
+			else:
+				# Try to print boxes/masks brief info
+				boxes = getattr(res, 'boxes', None)
+				masks = getattr(res, 'masks', None)
+				try:
+					if boxes is not None:
+						bx = getattr(boxes, 'xyxy', None)
+						print(f"[DBG] boxes present, xyxy type={type(bx)}")
+				except Exception:
+					print("[DBG] error reading boxes")
+				try:
+					if masks is not None:
+						md = getattr(masks, 'data', None)
+						print(f"[DBG] masks present, data_type={type(md)}")
+						try:
+							shape = md.cpu().numpy().shape if hasattr(md, 'cpu') else (np.asarray(md).shape)
+							print(f"[DBG] masks.data shape={shape}")
+						except Exception:
+							pass
+				except Exception:
+					print("[DBG] error reading masks")
+		except Exception as e:
+			print(f"[DBG] failed to summarize result {idx}: {e}")
 		base_name = f"result_{idx}"
 		annotated_path = out_dir / f"{base_name}_annotated.png"
 
