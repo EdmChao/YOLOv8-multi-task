@@ -105,8 +105,13 @@ def extract_raw(res):
 
 
 def run(args):
+
 	out_dir = Path(args.out_dir)
 	out_dir.mkdir(parents=True, exist_ok=True)
+
+	print("[INFO] Input args:")
+	for k, v in vars(args).items():
+		print(f"  {k}: {v}")
 
 	print(f"Loading model: {args.model}")
 	model = YOLO(args.model)
@@ -125,7 +130,16 @@ def run(args):
 	for idx, res in enumerate(results):
 		base_name = f"result_{idx}"
 		annotated_path = out_dir / f"{base_name}_annotated.png"
-		save_annotated(res, annotated_path)
+
+		# Handle case where res is a list (should be a Results object)
+		if isinstance(res, list):
+			print(f"[WARN] results[{idx}] is a list, not a Results object. Skipping annotated image save.")
+		else:
+			try:
+				save_annotated(res, annotated_path)
+				print(f"[INFO] Saved annotated image: {annotated_path}")
+			except Exception as e:
+				print(f"[ERROR] Failed to save annotated image to {annotated_path}: {e}")
 
 		# Save original image if available
 		try:
@@ -135,7 +149,12 @@ def run(args):
 		except Exception:
 			pass
 
-		meta, masks_np = extract_raw(res)
+		# Always extract meta, even if res is a list (will be empty)
+		try:
+			meta, masks_np = extract_raw(res)
+		except Exception as e:
+			print(f"[ERROR] extract_raw failed: {e}")
+			meta, masks_np = {"error": str(e)}, None
 
 		# Save masks separately if present
 		if masks_np is not None:
@@ -160,7 +179,7 @@ def run(args):
 		except Exception:
 			pass
 
-		print(f"Saved outputs for {base_name} -> {out_dir}")
+		print(f"[INFO] Saved outputs for {base_name} -> {out_dir}")
 
 
 def parse_args():
@@ -181,3 +200,4 @@ if __name__ == "__main__":
 	args = parse_args()
 	run(args)
 
+#python test_multitask.py --model ./models/v4.pt --source ./test_imgs/638ec620117f75ec4.jpg --out-dir ./output 
