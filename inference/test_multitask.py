@@ -100,7 +100,23 @@ def run(args):
 		print(f"  {k}: {v}")
 
 	print(f"Loading model: {args.model}")
-	model = YOLO(args.model)
+	# Previous load (kept as comment for easy revert):
+	# model = YOLO(args.model)
+	# Minimal change: if a YAML is provided, build model from YAML then load weights
+	try:
+		if getattr(args, 'yaml', None):
+			print(f"[INFO] Building model from YAML: {args.yaml} and loading weights: {args.model}")
+			model = YOLO(args.yaml).load(args.model)
+		else:
+			model = YOLO(args.model)
+	except Exception as e:
+		print(f"[WARN] failed to load model via YAML+weights approach: {e}\nFalling back to YOLO(args.model)")
+		model = YOLO(args.model)
+	# Debug: print class name mapping from the loaded model
+	try:
+		print('[DBG] model.names:', getattr(model, 'names', None))
+	except Exception as e:
+		print(f"[WARN] couldn't read model.names: {e}")
 
 	print(f"Running inference on source: {args.source}")
 	results = model.predict(
@@ -217,6 +233,8 @@ def parse_args():
 	p.add_argument("--model", required=True, help="<PLACEHOLDER: path to model .pt>")
 	p.add_argument("--source", required=True, help="<PLACEHOLDER: input image or directory>")
 	p.add_argument("--out-dir", required=True, help="<PLACEHOLDER: output directory>")
+	# Optional: build model from YAML then load weights (.pt)
+	p.add_argument("--yaml", required=False, default=None, help="optional: path to model YAML to build model before loading weights")
 	p.add_argument("--imgsz", type=tuple, default=(384,672), help="image size (h, w) as a tuple to pass to model")
 	p.add_argument("--device", default=0, help="device id or string (e.g. 0 or 'cpu')")
 	p.add_argument("--conf", type=float, default=0.25, help="confidence threshold")
@@ -230,3 +248,6 @@ if __name__ == "__main__":
 	run(args)
 
 #python test_multitask.py --model ./models/v4.pt --source ./test_imgs/638ec620117f75ec4.jpg --out-dir ./output
+#python test_multitask.py --model ./models/v4.pt --source ./test_imgs/e157eb545395c043c.jpg --out-dir ./output
+#python test_multitask.py --model ./models/v4s.pt --source ./test_imgs/0027eed2-a6630000.jpg --out-dir ./output
+#python test_multitask.py --model ./models/v4s.pt --source ./test_imgs/0027eed2-a6630000.jpg --out-dir ./output --yaml /data2/guest_rui/ztrs_workspace/YOLOv8-multi-task/ultralytics/models/v8/yolov8-bdd-v4-one-dropout-individual-s.yaml
