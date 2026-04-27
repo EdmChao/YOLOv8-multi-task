@@ -88,6 +88,12 @@ class Segment(Detect):
         # c4 = max(ch[0] // 4, self.nm)
         # self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.nm, 1)) for x in ch)
 
+    #added this to attempt to fix loading from yaml issues
+    def bias_init(self):
+        # Override Detect.bias_init which expects ModuleList cv2/cv3 to be iterable.
+        # Segment uses single Conv modules for proto head, so skip the Detect.bias_init.
+        return
+
     def forward(self, x):
         """Return model outputs and mask coefficients if training, otherwise return outputs and mask coefficients."""
         p = self.cv3(self.cv2(self.upsample(self.cv1(x[0])))) # mask protos
