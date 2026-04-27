@@ -50,63 +50,42 @@ def extract_raw(res):
 	meta = {}
 	masks_np = None
 
-	# Boxes (xyxy), confidences, classes
+	# Extract boxes, scores, and classes using the .boxes attribute
 	try:
-		boxes_obj = getattr(res, 'boxes', None)
-		if boxes_obj is None:
+		boxes_obj = res.boxes
+		if boxes_obj is not None:
+			meta['boxes'] = boxes_obj.xyxy.cpu().numpy().tolist() if boxes_obj.xyxy is not None else []
+			meta['scores'] = boxes_obj.conf.cpu().numpy().tolist() if boxes_obj.conf is not None else []
+			meta['classes'] = boxes_obj.cls.cpu().numpy().tolist() if boxes_obj.cls is not None else []
+		else:
 			meta['boxes'] = []
 			meta['scores'] = []
 			meta['classes'] = []
-		else:
-			# Boxes object may expose tensors via attributes
-			boxes_tensor = getattr(boxes_obj, 'xyxy', None) or getattr(boxes_obj, 'xyxy_i', None) or boxes_obj
-			confs = getattr(boxes_obj, 'conf', None) or getattr(boxes_obj, 'confidence', None)
-			clss = getattr(boxes_obj, 'cls', None) or getattr(boxes_obj, 'class', None)
-
-			def to_list(x):
-				if x is None:
-					return []
-				try:
-					return x.cpu().numpy().tolist()
-				except Exception:
-					try:
-						return np.asarray(x).tolist()
-					except Exception:
-						return []
-
-			meta['boxes'] = to_list(boxes_tensor)
-			meta['scores'] = to_list(confs)
-			meta['classes'] = to_list(clss)
 	except Exception as e:
+		print(f"[WARN] Failed to extract boxes: {e}")
 		meta['boxes'] = []
 		meta['scores'] = []
 		meta['classes'] = []
 
-	# Masks (if present)
+	# Extract masks using the .masks attribute
 	try:
-		masks = getattr(res, "masks", None)
-		if masks is not None:
-			masks_data = getattr(masks, "data", None)
-			if masks_data is not None:
-				try:
-					masks_np = masks_data.cpu().numpy()
-				except Exception:
-					masks_np = np.asarray(masks_data)
-				meta["masks_shape"] = masks_np.shape
-			else:
-				meta["masks_shape"] = None
+		masks = res.masks
+		if masks is not None and masks.data is not None:
+			masks_np = masks.data.cpu().numpy()
+			meta['masks_shape'] = masks_np.shape
 		else:
-			meta["masks_shape"] = None
-	except Exception:
-		meta["masks_shape"] = None
+			meta['masks_shape'] = None
+	except Exception as e:
+		print(f"[WARN] Failed to extract masks: {e}")
+		meta['masks_shape'] = None
 
 	# Optionally include image size / source info
 	try:
 		wh = getattr(res, "orig_shape", None)
 		if wh is not None:
 			meta["orig_shape"] = wh
-	except Exception:
-		pass
+	except Exception as e:
+		print(f"[WARN] Failed to extract orig_shape: {e}")
 
 	return meta, masks_np
 
@@ -228,4 +207,4 @@ if __name__ == "__main__":
 	args = parse_args()
 	run(args)
 
-#python test_multitask.py --model ./models/v4.pt --source ./test_imgs/638ec620117f75ec4.jpg --out-dir ./output 
+#python test_multitask.py --model ./models/v4.pt --source ./test_imgs/638ec620117f75ec4.jpg --out-dir ./output
