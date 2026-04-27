@@ -165,6 +165,28 @@ def run(args):
 
 		# Extract raw and save outputs
 		meta, masks_np = extract_raw(r0)
+		# Debug: show detected class indices and mapped names (if available)
+		try:
+			classes_list = meta.get('classes', [])
+			if classes_list is None:
+				classes_list = []
+			mapped_names = []
+			if hasattr(model, 'names') and model.names is not None:
+				for c in classes_list:
+					try:
+						ci = int(c)
+						mapped_names.append(model.names.get(ci, str(ci)))
+					except Exception:
+						mapped_names.append(str(c))
+			print('[DBG] detected class indices:', classes_list)
+			print('[DBG] detected class names :', mapped_names)
+		except Exception as e:
+			print(f"[WARN] failed to print class names: {e}")
+		# Debug: masks presence
+		try:
+			print('[DBG] masks present:', masks_np is not None)
+		except Exception:
+			pass
 		json_file = out_dir / 'result_0_raw.json'
 		with open(json_file, 'w') as f:
 			json.dump(meta, f, indent=2)
