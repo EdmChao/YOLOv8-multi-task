@@ -52,28 +52,35 @@ def extract_raw(res):
 
 	# Boxes (xyxy), confidences, classes
 	try:
-		boxes = getattr(res.boxes, "xyxy", None)
-		confs = getattr(res.boxes, "conf", None)
-		clss = getattr(res.boxes, "cls", None)
+		boxes_obj = getattr(res, 'boxes', None)
+		if boxes_obj is None:
+			meta['boxes'] = []
+			meta['scores'] = []
+			meta['classes'] = []
+		else:
+			# Boxes object may expose tensors via attributes
+			boxes_tensor = getattr(boxes_obj, 'xyxy', None) or getattr(boxes_obj, 'xyxy_i', None) or boxes_obj
+			confs = getattr(boxes_obj, 'conf', None) or getattr(boxes_obj, 'confidence', None)
+			clss = getattr(boxes_obj, 'cls', None) or getattr(boxes_obj, 'class', None)
 
-		def to_list(x):
-			if x is None:
-				return []
-			try:
-				return x.cpu().numpy().tolist()
-			except Exception:
-				try:
-					return np.asarray(x).tolist()
-				except Exception:
+			def to_list(x):
+				if x is None:
 					return []
+				try:
+					return x.cpu().numpy().tolist()
+				except Exception:
+					try:
+						return np.asarray(x).tolist()
+					except Exception:
+						return []
 
-		meta["boxes"] = to_list(boxes)
-		meta["scores"] = to_list(confs)
-		meta["classes"] = to_list(clss)
+			meta['boxes'] = to_list(boxes_tensor)
+			meta['scores'] = to_list(confs)
+			meta['classes'] = to_list(clss)
 	except Exception as e:
-		meta["boxes"] = []
-		meta["scores"] = []
-		meta["classes"] = []
+		meta['boxes'] = []
+		meta['scores'] = []
+		meta['classes'] = []
 
 	# Masks (if present)
 	try:
@@ -127,89 +134,80 @@ def run(args):
 		verbose=True,
 	)
 
-	for idx, res in enumerate(results):
-		# Debug: print result summary so we can inspect types and contents
+	# Print full results object before any warnings/info
+	try:
+		print('[DBG] Full results object:')
+		print(repr(results))
+	except Exception as e:
+		print(f"[DBG] failed to print full results: {e}")
+
+	# Diagnostic: access first result directly
+	try:
+		if len(results) == 0:
+			print('[WARN] results is empty')
+			return
+		r0 = results[0]
+		if isinstance(r0, list) and len(r0) >= 1:
+			print('[DBG] Unwrapping first result list')
+			r0 = r0[0]
+
+		print(f"[DBG] first result type: {type(r0)}")
+		# Access boxes and masks directly
 		try:
-			res_type = type(res)
-			print(f"[DBG] idx={idx} res_type={res_type}")
-			# If it's a list, show length and sample repr
-			if isinstance(res, list):
-				print(f"[DBG] results[{idx}] is list length={len(res)} repr_sample={str(res)[:200]}")
+			boxes = r0.boxes
+			print(f"[DBG] boxes attribute type: {type(boxes)}")
+		except Exception as e:
+			print(f"[WARN] could not access r0.boxes: {e}")
+			boxes = None
+		try:
+			masks = r0.masks
+			print(f"[DBG] masks attribute type: {type(masks)}")
+		except Exception as e:
+			print(f"[WARN] could not access r0.masks: {e}")
+			masks = None
+
+		# Try plotting annotated image
+		try:
+			annotated_img = r0.plot()
+			if annotated_img is None:
+				print('[WARN] r0.plot() returned None')
 			else:
-				# Try to print boxes/masks brief info
-				boxes = getattr(res, 'boxes', None)
-				masks = getattr(res, 'masks', None)
+				out_file = out_dir / 'result_0_annotated.png'
 				try:
-					if boxes is not None:
-						bx = getattr(boxes, 'xyxy', None)
-						print(f"[DBG] boxes present, xyxy type={type(bx)}")
-				except Exception:
-					print("[DBG] error reading boxes")
-				try:
-					if masks is not None:
-						md = getattr(masks, 'data', None)
-						print(f"[DBG] masks present, data_type={type(md)}")
-						try:
-							shape = md.cpu().numpy().shape if hasattr(md, 'cpu') else (np.asarray(md).shape)
-							print(f"[DBG] masks.data shape={shape}")
-						except Exception:
-							pass
-				except Exception:
-					print("[DBG] error reading masks")
+					if hasattr(annotated_img, 'save'):
+						annotated_img.save(out_file)
+					else:
+						Image.fromarray(annotated_img).save(out_file)
+					print('[INFO] Saved annotated image to', out_file)
+				except Exception as e:
+					print('[ERROR] failed to save annotated image:', e)
 		except Exception as e:
-			print(f"[DBG] failed to summarize result {idx}: {e}")
-		base_name = f"result_{idx}"
-		annotated_path = out_dir / f"{base_name}_annotated.png"
+			print('[ERROR] r0.plot() failed:', e)
 
-		# Handle case where res is a list (should be a Results object)
-		if isinstance(res, list):
-			print(f"[WARN] results[{idx}] is a list, not a Results object. Skipping annotated image save.")
-		else:
-			try:
-				save_annotated(res, annotated_path)
-				print(f"[INFO] Saved annotated image: {annotated_path}")
-			except Exception as e:
-				print(f"[ERROR] Failed to save annotated image to {annotated_path}: {e}")
-
-		# Save original image if available
-		try:
-			orig = getattr(res, "orig_img", None)
-			if orig is not None:
-				Image.fromarray(orig).save(out_dir / f"{base_name}_orig.png")
-		except Exception:
-			pass
-
-		# Always extract meta, even if res is a list (will be empty)
-		try:
-			meta, masks_np = extract_raw(res)
-		except Exception as e:
-			print(f"[ERROR] extract_raw failed: {e}")
-			meta, masks_np = {"error": str(e)}, None
-
-		# Save masks separately if present
-		if masks_np is not None:
-			masks_file = out_dir / f"{base_name}_masks.npz"
-			np.savez_compressed(masks_file, masks=masks_np)
-			meta["masks_file"] = str(masks_file)
-		else:
-			meta["masks_file"] = None
-
-		# Save JSON of meta (boxes, classes, shapes)
-		json_file = out_dir / f"{base_name}_raw.json"
-		with open(json_file, "w") as f:
+		# Extract raw and save outputs
+		meta, masks_np = extract_raw(r0)
+		json_file = out_dir / 'result_0_raw.json'
+		with open(json_file, 'w') as f:
 			json.dump(meta, f, indent=2)
+		print('[INFO] Saved raw JSON to', json_file)
 
-		# Also save a compact numpy file containing boxes & scores & classes if available
+		if masks_np is not None:
+			masks_file = out_dir / 'result_0_masks.npz'
+			np.savez_compressed(masks_file, masks=masks_np)
+			print('[INFO] Saved masks to', masks_file)
+
 		try:
-			boxes = meta.get("boxes", [])
-			scores = meta.get("scores", [])
-			classes = meta.get("classes", [])
-			npz_file = out_dir / f"{base_name}_detections.npz"
-			np.savez_compressed(npz_file, boxes=np.array(boxes), scores=np.array(scores), classes=np.array(classes))
-		except Exception:
-			pass
+			boxes_list = meta.get('boxes', [])
+			scores_list = meta.get('scores', [])
+			classes_list = meta.get('classes', [])
+			det_file = out_dir / 'result_0_detections.npz'
+			np.savez_compressed(det_file, boxes=np.array(boxes_list), scores=np.array(scores_list), classes=np.array(classes_list))
+			print('[INFO] Saved detections to', det_file)
+		except Exception as e:
+			print('[WARN] failed to save detections npz:', e)
 
-		print(f"[INFO] Saved outputs for {base_name} -> {out_dir}")
+	except Exception as e:
+		print('[ERROR] diagnostic extraction failed:', e)
 
 
 def parse_args():
